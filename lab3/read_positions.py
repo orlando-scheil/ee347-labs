@@ -7,9 +7,10 @@ On exit, prints a copy-pasteable array of all collected positions.
 import sys
 import time
 from pymycobot import MyCobot
+from pymycobot import PI_BAUD, PI_PORT
 
-MIN_ANGLES = [-165, -90, -180, -160, -115, -175]
-MAX_ANGLES = [165, 90, 65, 160, 115, 175]
+MIN_ANGLES = [-165, -90, -180, -145, -115, -175]
+MAX_ANGLES = [165, 90, 65, 145, 115, 175]
 
 # Port/baud per API: M5=COM3/115200, Pi=/dev/ttyAMA0/1000000
 PORT = "COM3" if sys.platform == "win32" else "/dev/ttyAMA0"
@@ -27,7 +28,7 @@ def within_bounds(position, min_angles, max_angles):
 collected = []  # [x, y, z, rx, ry, rz, q1..q6] per position
 robot = None
 try:
-    robot = MyCobot(PORT, str(BAUD))
+    robot = MyCobot(PI_PORT, PI_BAUD)
     robot.power_on()
     time.sleep(0.5)
     robot.release_all_servos()

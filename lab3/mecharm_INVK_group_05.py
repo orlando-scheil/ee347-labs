@@ -15,7 +15,7 @@ offsets = [0, -pi/2, 0, 0, 0, 0]  # Joint 2 has -90 degree offset
 dh_table = [
     # [a(n-1), alpha(n-1), d(n),    theta(n)]
     [0.0,      0,           87,       q1],
-    [0,       -pi/2,        0.0,      q2 + offsets[1] + 0.1221],
+    [0,       -pi/2,        0.0,      q2 + offsets[1]],
     [110.0,    0.0,         0.0,      q3],
     [20,      -pi/2,        90,       q4],
     [0.0,      pi/2,        0,        q5],
