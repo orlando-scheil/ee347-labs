@@ -15,7 +15,7 @@ offsets = [0, -pi/2, 0, 0, 0, 0]  # Joint 2 has -90 degree offset
 dh_table = [
     # [a(n-1), alpha(n-1), d(n),    theta(n)]
     [0.0,      0,           87,       q1],
-    [0,       -pi/2,        0.0,      q2],
+    [0,       -pi/2,        0.0,      q2 + offsets[1] + 0.1221],
     [110.0,    0.0,         0.0,      q3],
     [20,      -pi/2,        90,       q4],
     [0.0,      pi/2,        0,        q5],
@@ -47,7 +47,6 @@ for row in dh_table:
     T_i = get_transformation_matrix(a, alpha, d, theta)
     T_total = T_total * T_i
 print("Simplifying transformation matrix")
-T_total = simplify(T_total)
 
 # Define symbolic joint variables for differentiation
 q_sym = symbols('q1:7')
@@ -174,7 +173,7 @@ if __name__ == "__main__":
     # Load robot poses from Lab 2 CSV: first 6 columns are
     # [X, Y, Z, roll_deg, pitch_deg, yaw_deg], next 6 are joint angles (deg).
     base_dir = os.path.dirname(__file__)
-    csv_path = os.path.join(base_dir, "..", "lab2", "robot_poses.csv")
+    csv_path = os.path.join(base_dir, "robot_poses.csv")
     data = np.loadtxt(csv_path, delimiter=",")
 
     print("Testing inverse_kinematics on poses from robot_poses.csv\n")
@@ -218,5 +217,25 @@ if __name__ == "__main__":
             f"  FK from IK (mm, deg):  "
             f"X={X_fk:.2f}, Y={Y_fk:.2f}, Z={Z_fk:.2f}, "
             f"roll={roll_fk_deg:.2f}, pitch={pitch_fk_deg:.2f}, yaw={yaw_fk_deg:.2f}"
+        )
+        # Position error (mm)
+        pos_err_x = X_fk - x_target
+        pos_err_y = Y_fk - y_target
+        pos_err_z = Z_fk - z_target
+        pos_err_mm = np.sqrt(pos_err_x**2 + pos_err_y**2 + pos_err_z**2)
+        print(
+            f"  Position error (mm):   "
+            f"ΔX={pos_err_x:.4f}, ΔY={pos_err_y:.4f}, ΔZ={pos_err_z:.4f}, "
+            f"|err|={pos_err_mm:.4f}"
+        )
+        # Orientation error (deg)
+        orient_err_roll = roll_fk_deg - roll_deg
+        orient_err_pitch = pitch_fk_deg - pitch_deg
+        orient_err_yaw = yaw_fk_deg - yaw_deg
+        orient_err_deg = np.sqrt(orient_err_roll**2 + orient_err_pitch**2 + orient_err_yaw**2)
+        print(
+            f"  Orientation error (deg): "
+            f"Δroll={orient_err_roll:.4f}, Δpitch={orient_err_pitch:.4f}, Δyaw={orient_err_yaw:.4f}, "
+            f"|err|={orient_err_deg:.4f}"
         )
         print()
