@@ -101,47 +101,85 @@ def ik(target_pose, init_joints, max_iter=1000, tolerance=1e-5, bounds=None):
 
 def run_csv_test(csv_path=None):
     """
-    Validate the advanced IK against recorded poses from a CSV file.
-    Prints target vs. FK-reconstructed pose for each row.
+    Validate advanced IK against recorded poses from robot_poses.csv.
+
+    For each row the CSV supplies a target pose [X,Y,Z,roll,pitch,yaw] and the
+    measured joint angles.  The test runs IK on the target pose (seeded with the
+    measured angles), then forward-kinematics on the IK result, and reports the
+    pose error and joint-angle delta.
     """
-    from mecharm_INVK_group_05 import load_poses_from_csv
-
     if csv_path is None:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        csv_path = os.path.join(base_dir, "robot_poses.csv")
-    poses, measured_joints = load_poses_from_csv(csv_path)
-    print("Testing advanced IK on poses from", csv_path, "\n")
+        csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_poses.csv")
 
-    for idx, (pose, q_measured_deg) in enumerate(zip(poses, measured_joints), start=1):
-        x, y, z = pose[0], pose[1], pose[2]
-        roll_deg, pitch_deg, yaw_deg = pose[3], pose[4], pose[5]
-        rx_d, ry_d, rz_d = np.deg2rad([roll_deg, pitch_deg, yaw_deg])
-        q_init = np.deg2rad(q_measured_deg)
+    data = np.loadtxt(csv_path, delimiter=",")
+    n_poses = data.shape[0]
 
-        joint_angles = ik(
-            target_pose=[x, y, z, rx_d, ry_d, rz_d],
-            init_joints=q_init,
-        )
-        if joint_angles is None:
-            print(f"Pose {idx}: IK did not converge — skipping\n")
+    print(f"Advanced IK test — {n_poses} poses from {csv_path}")
+    print("=" * 100)
+
+    pos_errors = []
+    ori_errors = []
+    joint_deltas = []
+
+    for idx, row in enumerate(data, start=1):
+        target_xyz = row[0:3]
+        target_rpy_deg = row[3:6]
+        measured_deg = row[6:12]
+
+        target_rpy_rad = np.deg2rad(target_rpy_deg)
+        target_pose = np.concatenate([target_xyz, target_rpy_rad])
+
+        q_init = np.deg2rad(measured_deg)
+        q_sol = ik(target_pose=target_pose, init_joints=q_init)
+
+        if q_sol is None:
+            print(f"\nPose {idx:>2}: IK did not converge — skipped\n")
             continue
-        joint_angles_deg = np.degrees(joint_angles)
 
-        T_fk = forward_kinematics_func(*joint_angles)
-        fk_pose = transf_to_pose(T_fk)
-        X_fk, Y_fk, Z_fk = fk_pose[0], fk_pose[1], fk_pose[2]
-        roll_fk_deg = np.degrees(fk_pose[3])
-        pitch_fk_deg = np.degrees(fk_pose[4])
-        yaw_fk_deg = np.degrees(fk_pose[5])
+        q_sol_deg = np.degrees(q_sol)
+        fk_pose = np.array(transf_to_pose(forward_kinematics_func(*q_sol)), dtype=np.float64)
+        fk_xyz = fk_pose[0:3]
+        fk_rpy_deg = np.degrees(fk_pose[3:6])
 
-        print(f"Pose {idx}:")
-        print(f"  Target (mm, deg):    X={x:.2f}, Y={y:.2f}, Z={z:.2f}, "
-              f"roll={roll_deg:.2f}, pitch={pitch_deg:.2f}, yaw={yaw_deg:.2f}")
-        print(f"  Measured joints:     {q_measured_deg}")
-        print(f"  IK joints (deg):     {joint_angles_deg}")
-        print(f"  FK from IK (mm,deg): X={X_fk:.2f}, Y={Y_fk:.2f}, Z={Z_fk:.2f}, "
-              f"roll={roll_fk_deg:.2f}, pitch={pitch_fk_deg:.2f}, yaw={yaw_fk_deg:.2f}")
-        print()
+        d_pos = fk_xyz - target_xyz
+        d_ori = fk_rpy_deg - target_rpy_deg
+        d_joints = q_sol_deg - measured_deg
+
+        pos_norm = np.linalg.norm(d_pos)
+        ori_norm = np.linalg.norm(d_ori)
+
+        pos_errors.append(pos_norm)
+        ori_errors.append(ori_norm)
+        joint_deltas.append(d_joints)
+
+        print(f"\nPose {idx:>2}")
+        print(f"  Target  (mm, deg) : X={target_xyz[0]:.2f}\tY={target_xyz[1]:.2f}\tZ={target_xyz[2]:.2f}"
+              f"\troll={target_rpy_deg[0]:.2f}\tpitch={target_rpy_deg[1]:.2f}\tyaw={target_rpy_deg[2]:.2f}")
+        print(f"  FK→IK   (mm, deg) : X={fk_xyz[0]:.2f}\tY={fk_xyz[1]:.2f}\tZ={fk_xyz[2]:.2f}"
+              f"\troll={fk_rpy_deg[0]:.2f}\tpitch={fk_rpy_deg[1]:.2f}\tyaw={fk_rpy_deg[2]:.2f}")
+        print(f"  Pos err (mm)      : ΔX={d_pos[0]:+.4f}\tΔY={d_pos[1]:+.4f}\tΔZ={d_pos[2]:+.4f}"
+              f"\t‖err‖={pos_norm:.4f}")
+        print(f"  Ori err (deg)     : Δr={d_ori[0]:+.4f}\tΔp={d_ori[1]:+.4f}\tΔy={d_ori[2]:+.4f}"
+              f"\t‖err‖={ori_norm:.4f}")
+        print(f"  Measured joints   : [{',\t'.join(f'{a:.2f}' for a in measured_deg)}]")
+        print(f"  IK joints         : [{',\t'.join(f'{a:.2f}' for a in q_sol_deg)}]")
+        print(f"  Δ joints (deg)    : [{',\t'.join(f'{a:+.2f}' for a in d_joints)}]")
+
+    if not pos_errors:
+        print("\nNo poses converged — nothing to summarise.")
+        return
+
+    pos_errors = np.array(pos_errors)
+    ori_errors = np.array(ori_errors)
+    joint_deltas = np.array(joint_deltas)
+
+    print("\n" + "=" * 100)
+    print("SUMMARY")
+    print("-" * 100)
+    print(f"  Position error  (mm) : mean={pos_errors.mean():.4f}\tmax={pos_errors.max():.4f}")
+    print(f"  Orientation err (deg): mean={ori_errors.mean():.4f}\tmax={ori_errors.max():.4f}")
+    print(f"  Mean |Δjoint| (deg)  : [{',\t'.join(f'{v:.4f}' for v in np.mean(np.abs(joint_deltas), axis=0))}]")
+    print("=" * 100)
 
 
 # ---------------------------------------------------------------------------
@@ -200,31 +238,32 @@ def print_solved_waypoints(waypoints, solved_angles):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    WAYPOINTS = [[198.0, 77.1, 75.2, -175.85, -17.85, 27.87], [155.0, 12.9, 256.2, 172.07, -64.7, 20.48], [133.4, -63.9, 266.2, 160.72, -68.28, -3.28], [179.2, -74.5, 76.1, 178.36, -11.13, -12.74], [152.7, -51.6, 222.2, -174.41, -53.0, -15.81], [150.1, 63.2, 230.7, -178.68, -60.85, 27.46], [189.8, 73.1, 66.1, -179.09, -20.42, 26.64]]
+    run_csv_test()
+    # WAYPOINTS = [[198.0, 77.1, 75.2, -175.85, -17.85, 27.87], [155.0, 12.9, 256.2, 172.07, -64.7, 20.48], [133.4, -63.9, 266.2, 160.72, -68.28, -3.28], [179.2, -74.5, 76.1, 178.36, -11.13, -12.74], [152.7, -51.6, 222.2, -174.41, -53.0, -15.81], [150.1, 63.2, 230.7, -178.68, -60.85, 27.46], [189.8, 73.1, 66.1, -179.09, -20.42, 26.64]]
 
-    # Initial joint guess in degrees [q1..q6]; passed as init_joints to ik for first waypoint.
+    # # Initial joint guess in degrees [q1..q6]; passed as init_joints to ik for first waypoint.
 
-    mycobot = MyCobot(PI_PORT, PI_BAUD)
-    # Connect to the robot
-    mycobot.power_on()
-    mycobot.release_all_servos()
+    # mycobot = MyCobot(PI_PORT, PI_BAUD)
+    # # Connect to the robot
+    # mycobot.power_on()
+    # mycobot.release_all_servos()
 
-    mycobot.send_coords([10.63, -10.54, -13.0, 9.58, 65.91, 174.63], 50)
+    # mycobot.send_coords([10.63, -10.54, -13.0, 9.58, 65.91, 174.63], 50)
 
-    time.sleep(2)
+    # time.sleep(2)
 
-    q_init_deg = mycobot.get_angles()
+    # q_init_deg = mycobot.get_angles()
 
-    print(q_init_deg)
+    # print(q_init_deg)
 
-    solved_joint_angles = solve_waypoints(
-        WAYPOINTS,
-        angle_bounds=angle_bounds,
-    )
-    print_solved_waypoints(WAYPOINTS, solved_joint_angles)
+    # solved_joint_angles = solve_waypoints(
+    #     WAYPOINTS,
+    #     angle_bounds=angle_bounds,
+    # )
+    # print_solved_waypoints(WAYPOINTS, solved_joint_angles)
 
-    for i, joint_angles in enumerate(solved_joint_angles):
-        mycobot.send_angles(joint_angles, 50)
-        time.sleep(2)
+    # for i, joint_angles in enumerate(solved_joint_angles):
+    #     mycobot.send_angles(joint_angles, 50)
+    #     time.sleep(2)
 
-    mycobot.power_off()
+    # mycobot.power_off()

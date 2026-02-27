@@ -181,7 +181,8 @@ if __name__ == "__main__":
     for idx, row in enumerate(data, start=1):
         x_target, y_target, z_target = row[0:3]
         roll_deg, pitch_deg, yaw_deg = row[3:6]
-        q_measured_deg = row[6:12]
+        # q_measured_deg = row[6:12]
+        q_measured_deg = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
         # Convert pose and initial guess angles to radians
         rx_d, ry_d, rz_d = np.deg2rad([roll_deg, pitch_deg, yaw_deg])
