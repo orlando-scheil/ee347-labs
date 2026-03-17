@@ -247,7 +247,7 @@ if __name__ == "__main__":
         # increasing x moves forward
         # increasing y moves right
 
-        # blocks are 38cm big 
+        # blocks are 38cm big
 
         WAYPOINTS = [
             [121.7, 59.0, 250.0, 171.33, 53.24, -163.56], # Dec Top Above
@@ -256,7 +256,7 @@ if __name__ == "__main__":
             [142.0, -58.0, 108.7, -177.54, 56.81, 158.29], # Con Bottom Above
             [142.0, -58.0, 52.7, -177.54, 56.81, 158.29], # Con Bottom 4
             [142.0, -58.0, 108.7, -177.54, 56.81, 158.29], # Con Bottom Above
-            
+
             [121.7, 59.0, 180.0, 171.33, 53.24, -163.56], # Dec Middle Above
             [121.7, 59.0, 135.0, 171.33, 53.24, -163.56], # Dec Middle 7
             [121.7, 59.0, 180.0, 171.33, 53.24, -163.56], # Dec Middle Above
@@ -281,7 +281,7 @@ if __name__ == "__main__":
         angles = robot.get_angles()
         coords = robot.get_coords()
         print("Coords: ", coords, ", angles: ", angles)
-        
+
         robot.set_gripper_value(100, 50, 1)
 
         solutions = solve_waypoints(WAYPOINTS, angle_bounds=angle_bounds)
