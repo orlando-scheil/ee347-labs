@@ -46,7 +46,6 @@ for row in dh_table:
     a, alpha, d, theta = row
     T_i = get_transformation_matrix(a, alpha, d, theta)
     T_total = T_total * T_i
-print("Simplifying transformation matrix")
 
 # Define symbolic joint variables for differentiation
 q_sym = symbols('q1:7')
@@ -169,74 +168,107 @@ def inverse_kinematics(x_target, y_target, z_target, rx_d, ry_d, rz_d, q_init, l
     return joint_angles
 
 
-if __name__ == "__main__":
-    # Load robot poses from Lab 2 CSV: first 6 columns are
-    # [X, Y, Z, roll_deg, pitch_deg, yaw_deg], next 6 are joint angles (deg).
-    base_dir = os.path.dirname(__file__)
-    csv_path = os.path.join(base_dir, "robot_poses.csv")
-    data = np.loadtxt(csv_path, delimiter=",")
+def transf_to_pose(t_matrix):
+    """Extract [X, Y, Z, roll, pitch, yaw] from a 4x4 homogeneous transformation matrix."""
+    X = t_matrix[0, 3]
+    Y = t_matrix[1, 3]
+    Z = t_matrix[2, 3]
 
-    print("Testing inverse_kinematics on poses from robot_poses.csv\n")
+    R = np.array(t_matrix[0:3, 0:3]).astype(np.float64)
+
+    roll = np.arctan2(R[2, 1], R[2, 2])
+    pitch = np.arctan2(-R[2, 0], np.sqrt(R[2, 1] ** 2 + R[2, 2] ** 2))
+    yaw = np.arctan2(R[1, 0], R[0, 0])
+
+    return X, Y, Z, roll, pitch, yaw
+
+
+# ---------------------------------------------------------------------------
+# CSV test (callable, no robot needed)
+# ---------------------------------------------------------------------------
+
+def run_csv_test(csv_path=None):
+    """
+    Validate basic (split position/orientation) IK against recorded poses
+    from robot_poses.csv.
+
+    For each row the CSV supplies a target pose [X,Y,Z,roll,pitch,yaw] and the
+    measured joint angles.  The test runs IK on the target pose (seeded with the
+    measured angles), then forward-kinematics on the IK result, and reports the
+    pose error and joint-angle delta.
+    """
+    if csv_path is None:
+        csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_poses.csv")
+
+    data = np.loadtxt(csv_path, delimiter=",")
+    n_poses = data.shape[0]
+
+    print(f"Basic IK test — {n_poses} poses from {csv_path}")
+    print("=" * 100)
+
+    pos_errors = []
+    ori_errors = []
+    joint_deltas = []
 
     for idx, row in enumerate(data, start=1):
-        x_target, y_target, z_target = row[0:3]
-        roll_deg, pitch_deg, yaw_deg = row[3:6]
-        # q_measured_deg = row[6:12]
-        q_measured_deg = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+        target_xyz = row[0:3]
+        target_rpy_deg = row[3:6]
+        measured_deg = row[6:12]
 
-        # Convert pose and initial guess angles to radians
-        rx_d, ry_d, rz_d = np.deg2rad([roll_deg, pitch_deg, yaw_deg])
-        q_init = np.deg2rad(q_measured_deg)
+        target_rpy_rad = np.deg2rad(target_rpy_deg)
+        q_init = np.deg2rad(measured_deg)
 
-        # Solve IK
-        joint_angles = inverse_kinematics(
-            x_target, y_target, z_target, rx_d, ry_d, rz_d, q_init, link_lengths
+        q_sol = inverse_kinematics(
+            target_xyz[0], target_xyz[1], target_xyz[2],
+            target_rpy_rad[0], target_rpy_rad[1], target_rpy_rad[2],
+            q_init, link_lengths
         )
-        joint_angles_deg = np.degrees(joint_angles)
 
-        # Forward kinematics of IK solution to get resulting pose
-        T_fk = forward_kinematics_func(*joint_angles)
-        X_fk = T_fk[0, 3]
-        Y_fk = T_fk[1, 3]
-        Z_fk = T_fk[2, 3]
-        R_fk = np.array(T_fk[0:3, 0:3]).astype(np.float64)
-        roll_fk = np.arctan2(R_fk[2, 1], R_fk[2, 2])
-        pitch_fk = np.arctan2(-R_fk[2, 0], np.sqrt(R_fk[2, 1] ** 2 + R_fk[2, 2] ** 2))
-        yaw_fk = np.arctan2(R_fk[1, 0], R_fk[0, 0])
-        roll_fk_deg, pitch_fk_deg, yaw_fk_deg = np.degrees([roll_fk, pitch_fk, yaw_fk])
+        q_sol_deg = np.degrees(q_sol)
+        fk_pose = np.array(transf_to_pose(forward_kinematics_func(*q_sol)), dtype=np.float64)
+        fk_xyz = fk_pose[0:3]
+        fk_rpy_deg = np.degrees(fk_pose[3:6])
 
-        # Clean, comparable printout
-        print(f"Pose {idx}:")
-        print(
-            f"  Target pose (mm, deg): "
-            f"X={x_target:.2f}, Y={y_target:.2f}, Z={z_target:.2f}, "
-            f"roll={roll_deg:.2f}, pitch={pitch_deg:.2f}, yaw={yaw_deg:.2f}"
-        )
-        print(f"  Measured joints (deg): {q_measured_deg}")
-        print(f"  IK joints (deg):       {joint_angles_deg}")
-        print(
-            f"  FK from IK (mm, deg):  "
-            f"X={X_fk:.2f}, Y={Y_fk:.2f}, Z={Z_fk:.2f}, "
-            f"roll={roll_fk_deg:.2f}, pitch={pitch_fk_deg:.2f}, yaw={yaw_fk_deg:.2f}"
-        )
-        # Position error (mm)
-        pos_err_x = X_fk - x_target
-        pos_err_y = Y_fk - y_target
-        pos_err_z = Z_fk - z_target
-        pos_err_mm = np.sqrt(pos_err_x**2 + pos_err_y**2 + pos_err_z**2)
-        print(
-            f"  Position error (mm):   "
-            f"ΔX={pos_err_x:.4f}, ΔY={pos_err_y:.4f}, ΔZ={pos_err_z:.4f}, "
-            f"|err|={pos_err_mm:.4f}"
-        )
-        # Orientation error (deg)
-        orient_err_roll = roll_fk_deg - roll_deg
-        orient_err_pitch = pitch_fk_deg - pitch_deg
-        orient_err_yaw = yaw_fk_deg - yaw_deg
-        orient_err_deg = np.sqrt(orient_err_roll**2 + orient_err_pitch**2 + orient_err_yaw**2)
-        print(
-            f"  Orientation error (deg): "
-            f"Δroll={orient_err_roll:.4f}, Δpitch={orient_err_pitch:.4f}, Δyaw={orient_err_yaw:.4f}, "
-            f"|err|={orient_err_deg:.4f}"
-        )
-        print()
+        d_pos = fk_xyz - target_xyz
+        d_ori = (fk_rpy_deg - target_rpy_deg + 180) % 360 - 180
+        d_joints = q_sol_deg - measured_deg
+
+        pos_norm = np.linalg.norm(d_pos)
+        ori_norm = np.linalg.norm(d_ori)
+
+        pos_errors.append(pos_norm)
+        ori_errors.append(ori_norm)
+        joint_deltas.append(d_joints)
+
+        print(f"\nPose {idx:>2}")
+        print(f"  Target  (mm, deg) : X={target_xyz[0]:.2f}  Y={target_xyz[1]:.2f}  Z={target_xyz[2]:.2f}"
+              f"  roll={target_rpy_deg[0]:.2f}  pitch={target_rpy_deg[1]:.2f}  yaw={target_rpy_deg[2]:.2f}")
+        print(f"  FK→IK   (mm, deg) : X={fk_xyz[0]:.2f}  Y={fk_xyz[1]:.2f}  Z={fk_xyz[2]:.2f}"
+              f"  roll={fk_rpy_deg[0]:.2f}  pitch={fk_rpy_deg[1]:.2f}  yaw={fk_rpy_deg[2]:.2f}")
+        print(f"  Pos err (mm)      : ΔX={d_pos[0]:+.4f}  ΔY={d_pos[1]:+.4f}  ΔZ={d_pos[2]:+.4f}"
+              f"  ‖err‖={pos_norm:.4f}")
+        print(f"  Ori err (deg)     : Δr={d_ori[0]:+.4f}  Δp={d_ori[1]:+.4f}  Δy={d_ori[2]:+.4f}"
+              f"  ‖err‖={ori_norm:.4f}")
+        print(f"  Measured joints   : [{', '.join(f'{a:.2f}' for a in measured_deg)}]")
+        print(f"  IK joints         : [{', '.join(f'{a:.2f}' for a in q_sol_deg)}]")
+        print(f"  Δ joints (deg)    : [{', '.join(f'{a:+.2f}' for a in d_joints)}]")
+
+    if not pos_errors:
+        print("\nNo poses converged — nothing to summarise.")
+        return
+
+    pos_errors = np.array(pos_errors)
+    ori_errors = np.array(ori_errors)
+    joint_deltas = np.array(joint_deltas)
+
+    print("\n" + "=" * 100)
+    print("SUMMARY")
+    print("-" * 100)
+    print(f"  Position error  (mm) : mean={pos_errors.mean():.4f}  max={pos_errors.max():.4f}")
+    print(f"  Orientation err (deg): mean={ori_errors.mean():.4f}  max={ori_errors.max():.4f}")
+    print(f"  Mean |Δjoint| (deg)  : [{', '.join(f'{v:.4f}' for v in np.mean(np.abs(joint_deltas), axis=0))}]")
+    print("=" * 100)
+
+
+if __name__ == "__main__":
+    run_csv_test()
